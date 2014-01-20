@@ -53,32 +53,55 @@ encode_struct(#ofp_match{fields = Fields}) ->
     <<1:16, Length:16, FieldsBin/bytes, 0:Padding>>;
 encode_struct(#ofp_field{class = Class, name = Field, has_mask = HasMask,
                          value = Value, mask = Mask}) ->
-    ClassInt = ofp_v4_enum:to_int(oxm_class, Class),
-    FieldInt = ofp_v4_enum:to_int(oxm_ofb_match_fields, Field),
-    BitLength = ofp_v4_map:tlv_length(Field),
-    case Class of
-        openflow_basic ->
-            Value2 = ofp_utils:cut_bits(Value, BitLength);
-        _ ->
-            Value2 = Value
+    ClassInt = case Class of
+        {C, _} ->
+            ofp_v4_enum:to_int(oxm_class, C);
+        C ->
+            ofp_v4_enum:to_int(oxm_class, C)
     end,
+    {FieldInt, BitLength, WireBitLength} = case Class of
+        openflow_basic ->
+            {ofp_v4_enum:to_int(oxm_ofb_match_fields, Field),
+             ofp_v4_map:tlv_length(Field),
+             ofp_v4_map:tlv_wire_length(Field)};
+        {experimenter, onf} ->
+            %% EXT-256
+            %% the definition of onf_oxm_pbb_uca is a bit weird.
+            %% instead of oxm_field, an additional field "exp_type" is
+            %% used to specify the field type.  it's unclear what value
+            %% oxm_field should be.
+            {0,
+             ofp_v4_map:tlv_length(Field),
+             ofp_v4_map:tlv_wire_length(Field)};
+        _ ->
+            Len = bit_size(Value),
+            {Field, Len, Len}
+    end,
+    WireBitLength2 = (WireBitLength + 7) div 8 * 8,
+    Value2 = ofp_utils:cut_bits(Value, BitLength, WireBitLength2),
     case HasMask of
         true ->
             HasMaskInt = 1,
-            case Class of
-                openflow_basic ->
-                    Mask2 = ofp_utils:cut_bits(Mask, BitLength);
-                _ ->
-                    Mask2 = Mask
-            end,
-            Rest = <<Value2/bytes, Mask2/bytes>>,
-            Len2 = byte_size(Value2) * 2;
+            Mask2 = ofp_utils:cut_bits(Mask, BitLength, WireBitLength2),
+            Rest = <<Value2/bytes, Mask2/bytes>>;
         false ->
             HasMaskInt = 0,
-            Rest = <<Value2/bytes>>,
-            Len2 = byte_size(Value2)
+            Rest = <<Value2/bytes>>
     end,
-    <<ClassInt:16, FieldInt:7, HasMaskInt:1, Len2:8, Rest/bytes>>;
+    Rest2 = case Class of
+        {experimenter, Exp} ->
+            ExpId = get_id(experimenter_id, Exp),
+            Rest3 = case Exp of
+                onf ->
+                    ExpTypeInt = get_id(oxm_onf_match_fields, Field),
+                    <<ExpTypeInt:16, Rest/bytes>>
+            end,
+            <<ExpId:32, Rest3/bytes>>;
+        _ ->
+            Rest
+    end,
+    Len2 = byte_size(Rest2),
+    <<ClassInt:16, FieldInt:7, HasMaskInt:1, Len2:8, Rest2/bytes>>;
 
 encode_struct(#ofp_port{port_no = PortNo, hw_addr = HWAddr, name = Name,
                         config = Config, state = State, curr = Curr,
@@ -321,7 +344,21 @@ encode_struct(#ofp_meter_config{flags = Flags, meter_id = MeterId,
     FlagsBin = flags_to_binary(meter_flag, Flags, 2),
     BandsBin = encode_list(Bands),
     Length = ?METER_CONFIG_SIZE + byte_size(BandsBin),
-    <<Length:16, FlagsBin:16/bits, MeterIdInt:32, BandsBin/bytes>>.
+    <<Length:16, FlagsBin:16/bits, MeterIdInt:32, BandsBin/bytes>>;
+encode_struct(#onf_flow_monitor{id = Id,
+                                flags = Flags,
+                                out_port = OutPort,
+                                table_id = TableId,
+                                fields = Fields}) ->
+    FieldsBin = encode_list(Fields),
+    MatchLen = byte_size(FieldsBin),
+    Padding = ofp_utils:padding(MatchLen, 8) * 8,
+    FlagsBin = flags_to_binary(onf_flow_monitor_flags, Flags, 2),
+    OutPortInt = get_id(port_no, OutPort),
+    TableIdInt = get_id(table, TableId),
+    <<Id:32, FlagsBin:2/bytes, MatchLen:16,
+      OutPortInt:32, TableIdInt:8, 0:24,
+      FieldsBin/bytes, 0:Padding>>.
 
 encode_async_masks({PacketInMask1, PacketInMask2},
                    {PortStatusMask1, PortStatusMask2},
@@ -663,8 +700,9 @@ encode_body(#ofp_experimenter_request{flags = Flags,
                                       exp_type = ExpType, data = Data}) ->
     TypeInt = ofp_v4_enum:to_int(multipart_type, experimenter),
     FlagsBin = flags_to_binary(multipart_request_flags, Flags, 2),
+    ExperimenterInt = get_id(experimenter_id, Experimenter),
     <<TypeInt:16, FlagsBin:2/bytes, 0:32,
-      Experimenter:32, ExpType:32, Data/bytes>>;
+      ExperimenterInt:32, ExpType:32, Data/bytes>>;
 encode_body(#ofp_experimenter_reply{flags = Flags,
                                     experimenter = Experimenter,
                                     exp_type = ExpType, data = Data}) ->
@@ -709,6 +747,17 @@ encode_body(#ofp_meter_mod{command = Command,
     MeterIdInt = get_id(meter_id, MeterId),
     BandsBin = encode_list(Bands),
     <<CommandInt:16, FlagsBin:2/bytes, MeterIdInt:32, BandsBin/bytes>>;
+
+%% ONF EXT-187
+encode_body(#onf_flow_monitor_request{flags = Flags,
+                                      body = Body}) ->
+    Data = encode_list(Body),
+    ExpTypeInt = get_id(onf_multipart_msg_type, onf_flow_monitor),
+    encode_body(#ofp_experimenter_request{flags=Flags,
+                                          experimenter=onf,
+                                          exp_type=ExpTypeInt,
+                                          data=Data});
+
 encode_body(Other) ->
     throw({bad_message, Other}).
 
@@ -1064,6 +1113,8 @@ type_int(#ofp_get_async_reply{}) ->
 type_int(#ofp_set_async{}) ->
     ofp_v4_enum:to_int(type, set_async);
 type_int(#ofp_meter_mod{}) ->
-    ofp_v4_enum:to_int(type, meter_mod).
+    ofp_v4_enum:to_int(type, meter_mod);
+type_int(#onf_flow_monitor_request{}) ->
+    ofp_v4_enum:to_int(type, multipart_request).
 
 

@@ -81,26 +81,41 @@ decode_match_field(<<Header:4/bytes, Binary/bytes>>) ->
     <<ClassInt:16, FieldInt:7, HasMaskInt:1,
       Length:8>> = Header,
     Class = ofp_v4_enum:to_atom(oxm_class, ClassInt),
-    Field = ofp_v4_enum:to_atom(oxm_ofb_match_fields, FieldInt),
     HasMask = (HasMaskInt =:= 1),
-    case Class of
+    {Class2, Field, BitLength, ByteLength, Binary2} = case Class of
         openflow_basic ->
-            BitLength = ofp_v4_map:tlv_length(Field);
+            F = ofp_v4_enum:to_atom(oxm_ofb_match_fields, FieldInt),
+            {Class, F, ofp_v4_map:tlv_length(F), Length, Binary};
+        experimenter ->
+            <<ExpInt:32, Binary3/bytes>> = Binary,
+            Exp = get_id(experimenter_id, ExpInt),
+            case Exp of
+                onf ->
+                    %% EXT-256
+                    %% see the comment in encode_struct/1 for the weirdness
+                    <<ExpTypeInt:16, Binary4/bytes>> = Binary3,
+                    F = get_id(oxm_onf_match_fields, ExpTypeInt),
+                    %% reduce length for:
+                    %%    uint32_t experimenter;
+                    %%    uint16_t exp_type;
+                    {{Class, Exp},
+                     F, ofp_v4_map:tlv_length(F), Length - 6, Binary4}
+            end;
         _ ->
-            BitLength = Length * 4
+            {Class, FieldInt, Length * 8, Length, Binary}
     end,
     case HasMask of
         false ->
-            <<Value:Length/bytes, Rest/bytes>> = Binary,
+            <<Value:ByteLength/bytes, Rest/bytes>> = Binary2,
             TLV = #ofp_field{value = ofp_utils:uncut_bits(Value, BitLength)};
         true ->
-            Length2 = (Length div 2),
-            <<Value:Length2/bytes, Mask:Length2/bytes,
-              Rest/bytes>> = Binary,
+            ByteLength2 = (ByteLength div 2),
+            <<Value:ByteLength2/bytes, Mask:ByteLength2/bytes,
+              Rest/bytes>> = Binary2,
             TLV = #ofp_field{value = ofp_utils:uncut_bits(Value, BitLength),
                              mask = ofp_utils:uncut_bits(Mask, BitLength)}
     end,
-    {TLV#ofp_field{class = Class,
+    {TLV#ofp_field{class = Class2,
                    name = Field,
                    has_mask = HasMask}, Rest}.
 
@@ -797,6 +812,27 @@ decode_meter_config_list(Binary, MeterConfigs) ->
                                     bands = Bands},
     decode_meter_config_list(Rest2, [MeterConfig | MeterConfigs]).
 
+decode_flow_monitor(Binary) ->
+    decode_flow_monitor(Binary, []).
+
+decode_flow_monitor(<<>>, Acc) ->
+    lists:reverse(Acc);
+decode_flow_monitor(<<Id:32, FlagsBin:2/bytes, MatchLen:16,
+                      OutPortInt:32, TableIdInt:8, _:24,
+                      Rest/bytes>>, Acc) ->
+    Flags = binary_to_flags(onf_flow_monitor_flags, FlagsBin),
+    OutPort = get_id(port_no, OutPortInt),
+    TableId = get_id(table, TableIdInt),
+    PadBits = ofp_utils:padding(MatchLen, 8) * 8,
+    <<FieldsBin:MatchLen/bytes, _:PadBits, Rest2/bytes>> = Rest,
+    Fields = decode_match_fields(FieldsBin),
+    Rec = #onf_flow_monitor{id = Id,
+                            flags = Flags,
+                            out_port = OutPort,
+                            table_id = TableId,
+                            fields = Fields},
+    decode_flow_monitor(Rest2, [Rec | Acc]).
+
 decode_bitmap(_, Index, _, Acc) when Index >= 32 ->
     Acc;
 decode_bitmap(Int, Index, Base, Acc) when Int band (1 bsl Index) == 0 ->
@@ -1050,11 +1086,24 @@ decode_body(multipart_request, Binary) ->
             #ofp_meter_features_request{flags = Flags};
         experimenter ->
             DataLength = size(Binary) - ?EXPERIMENTER_STATS_REQUEST_SIZE + ?OFP_HEADER_SIZE,
-            <<Experimenter:32, ExpType:32,
+            <<ExperimenterInt:32, ExpTypeInt:32,
               ExpData:DataLength/bytes>> = Data,
-            #ofp_experimenter_request{flags = Flags,
-                                      experimenter = Experimenter,
-                                      exp_type = ExpType, data = ExpData}
+            Experimenter = get_id(experimenter_id, ExperimenterInt),
+            case Experimenter of
+                onf ->
+                    ExpType = get_id(onf_multipart_msg_type, ExpTypeInt),
+                    case ExpType of
+                        onf_flow_monitor ->
+                            Body = decode_flow_monitor(ExpData),
+                            #onf_flow_monitor_request{flags = Flags,
+                                                      body = Body}
+                    end;
+                _ ->
+                    #ofp_experimenter_request{flags = Flags,
+                                              experimenter = Experimenter,
+                                              exp_type = ExpTypeInt,
+                                              data = ExpData}
+            end
     end;
 decode_body(multipart_reply, Binary) ->
     <<TypeInt:16, FlagsBin:16/bits, _Pad:32, Data/bytes>> = Binary,
@@ -1214,6 +1263,7 @@ decode_body(meter_mod, Binary) ->
     Bands = decode_bands(BandsBin),
     #ofp_meter_mod{command = Command, flags = Flags, meter_id = MeterId,
                    bands = Bands}.
+
 
 %%%-----------------------------------------------------------------------------
 %%% Internal functions

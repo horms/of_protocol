@@ -195,6 +195,8 @@ required(pbb_isid) ->
     {eth_type,<<16#88E7:16>>};
 required(ipv6_exthdr) ->
     {eth_type,<<16#86dd:16>>};
+required(pbb_uca) ->
+    {eth_type,<<16#88E7:16>>};
 required(_) ->
     none.
 
@@ -467,6 +469,7 @@ mpls_bos(Val) ->
 
 % eth_type=0x88e7
 %% pbb_isid
+%% pbb_uca
 
 %% tunnel_id
 

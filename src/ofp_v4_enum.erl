@@ -109,6 +109,11 @@
                        pause,
                        pause_asym]}).
 
+-enum({experimenter_id, [{nx,  16#00002300},    %% Nicira
+                         {bsn, 16#005c16c7},    %% Big Switch Networks
+                         {onf, 16#4f4e4600}]}). %% OpenFlow Extensions for
+                                                %% 1.3.X Pack 1
+
 %% Queue Structures ------------------------------------------------------------
 
 %% Note: Not in the specification
@@ -168,6 +173,8 @@
                               pbb_isid,
                               tunnel_id,
                               ipv6_exthdr]}).
+
+-enum({oxm_onf_match_fields, [{pbb_uca, 2560}]}).  %% EXT-256
 
 -enum({vlan_id, [none,
                  {present, 16#1000}]}).
@@ -520,3 +527,20 @@
 %% Echo Reply ------------------------------------------------------------------
 
 %% Experimenter ----------------------------------------------------------------
+%% ONF Experimenter
+
+-enum({onf_multipart_msg_type, [{onf_flow_monitor, 1870}]}).
+
+%% EXT-187
+
+-enum({onf_flow_monitor_flags, [initial,
+                                add,
+                                delete,
+                                modify,
+                                actions,
+                                own]}).
+
+-enum({onf_flow_update_event, [added,
+                               deleted,
+                               modified,
+                               abbrev]}).
