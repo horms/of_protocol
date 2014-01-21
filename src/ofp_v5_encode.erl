@@ -56,9 +56,11 @@ encode_struct(#ofp_field{class = Class, name = Field, has_mask = HasMask,
     ClassInt = ofp_v5_enum:to_int(oxm_class, Class),
     FieldInt = ofp_v5_enum:to_int(oxm_ofb_match_fields, Field),
     BitLength = ofp_v5_map:tlv_length(Field),
+    WireBitLength = ofp_v5_map:tlv_wire_length(Field),
+    WireBitLength2 = (WireBitLength + 7) div 8 * 8,
     case Class of
         openflow_basic ->
-            Value2 = ofp_utils:cut_bits(Value, BitLength);
+            Value2 = ofp_utils:cut_bits(Value, BitLength, WireBitLength2);
         _ ->
             Value2 = Value
     end,
@@ -67,7 +69,7 @@ encode_struct(#ofp_field{class = Class, name = Field, has_mask = HasMask,
             HasMaskInt = 1,
             case Class of
                 openflow_basic ->
-                    Mask2 = ofp_utils:cut_bits(Mask, BitLength);
+                    Mask2 = ofp_utils:cut_bits(Mask, BitLength, WireBitLength2);
                 _ ->
                     Mask2 = Mask
             end,
