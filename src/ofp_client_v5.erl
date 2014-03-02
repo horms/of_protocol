@@ -23,8 +23,6 @@
          create_role/2,
          extract_role/1,
          role_status/3,
-         create_async/1,
-         extract_async/1,
          filter_out_message/3,
          type_atom/1,
          add_aux_id/2,
@@ -60,36 +58,6 @@ role_status(Role, Reason, GenId) ->
     #ofp_role_status{role = Role,
                      reason = Reason,
                      generation_id = GenId}.
-
-%% @doc Create async filters message.
--spec create_async(#async_config{}) -> #ofp_get_async_reply{}.
-create_async(#async_config{
-                master_equal_packet_in = MEP,
-                master_equal_port_status = MES,
-                master_equal_flow_removed = MEF,
-                slave_packet_in = SP,
-                slave_port_status = SS,
-                slave_flow_removed = SF}) ->
-    %% Ensure that we don't try to send v4 values
-    MEP5 = MEP -- [no_match, action],
-    SP5 = SP -- [no_match, action],
-    #ofp_get_async_reply{packet_in_mask = {MEP5, SP5},
-                         port_status_mask = {MES, SS},
-                         flow_removed_mask = {MEF, SF}}.
-
-%% @doc Extract async filters information.
--spec extract_async(#ofp_set_async{}) -> #async_config{}.
-extract_async(#ofp_set_async{packet_in_mask = {MEP, SP},
-                             port_status_mask = {MES, SS},
-                             flow_removed_mask = {MEF, SF}}) ->
-    #async_config{
-       master_equal_packet_in = MEP,
-       master_equal_port_status = MES,
-       master_equal_flow_removed = MEF,
-       slave_packet_in = SP,
-       slave_port_status = SS,
-       slave_flow_removed = SF
-      }.
 
 -spec filter_out_message(#ofp_message{},
                          master | slave | equal,
