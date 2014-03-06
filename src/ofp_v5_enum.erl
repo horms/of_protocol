@@ -136,6 +136,23 @@
                           max_rate,
                           {experimenter, 16#ffff}]}).
 
+%% Acync Config Structures -----------------------------------------------------
+
+-enum({async_config_prop_type, [packet_in_slave,
+                                packet_in_master,
+                                port_status_slave,
+                                port_status_master,
+                                flow_removed_slave,
+                                flow_removed_master,
+                                role_status_slave,
+                                role_status_master,
+                                table_status_slave,
+                                table_status_master,
+                                requestforward_slave,
+                                requestforward_master,
+                                {experimenter_slave, 16#fffe},
+                                {experimenter_master, 16#ffff}]}).
+
 %% Flow Match Structures -------------------------------------------------------
 
 -enum({match_type, [standard,

@@ -1586,6 +1586,41 @@
          }).
 -type ofp_set_async() :: #ofp_set_async{}.
 
+-type ofp_async_config_prop_type() :: packet_in_slave
+                                    | packet_in_master
+                                    | port_status_slave
+                                    | port_status_master
+                                    | flow_removed_slave
+                                    | flow_removed_master
+                                    | role_status_slave
+                                    | role_status_master
+                                    | table_status_slave
+                                    | table_status_master
+                                    | requestforward_slave
+                                    | requestforward_master
+                                    | experimenter_slave
+                                    | experimenter_master.
+
+-record(ofp_async_config_prop_reasons, {
+          type :: ofp_async_config_prop_type(),
+          mask = [] :: [ofp_packet_in_reason()]
+	             | [ofp_port_status_reason()]
+		     | [ofp_flow_removed_reason()]
+		     | [ofp_controller_role_reason()]
+		     | [ofp_table_reason()]
+		     | [ofp_requestforward_reason()]
+         }).
+
+-record(ofp_async_config_prop_experimenter, {
+          type :: ofp_async_config_prop_type(),
+          experimenter :: integer(),
+          exp_type :: integer(),
+          data = <<>> :: binary()
+         }).
+
+-type ofp_async_config_property() :: #ofp_async_config_prop_reasons{}
+                                   | #ofp_async_config_prop_experimenter{}.
+
 %%%-----------------------------------------------------------------------------
 %%% Bundle Messages (version 1.4.0, section 7.3.9)
 %%%-----------------------------------------------------------------------------
