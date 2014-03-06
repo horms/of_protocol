@@ -1551,6 +1551,9 @@
 %%% Request Forward Message (version 1.4.0, section 7.4.6)
 %%%-----------------------------------------------------------------------------
 
+-type ofp_requestforward_reason() :: group_mod
+                                   | meter_mod.
+
 -record(ofp_requestforward, {
           request :: ofp_message()
          }).

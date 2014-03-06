@@ -436,6 +436,11 @@
 -enum({table_reason, [{vacancy_down, 3},
                       {vacancy_up, 4}]}).
 
+%% Request Forward Messages ----------------------------------------------------
+
+-enum({requestforward_reason, [group_mod,
+                               meter_mod]}).
+
 %% Bundle Messages -------------------------------------------------------------
 
 -enum({bundle_ctrl_type, [open_request,
