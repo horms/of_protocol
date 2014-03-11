@@ -210,21 +210,64 @@ decode_properties(Binary, Properties) ->
     end,
     decode_properties(Rest, [Property | Properties]).
 
-%% @doc Decode bitmasks in async messages.
-decode_async_masks(<<PacketInMaskBin1:32/bits, PacketInMaskBin2:32/bits,
-                     PortReasonMaskBin1:32/bits, PortReasonMaskBin2:32/bits,
-                     FlowRemovedMaskBin1:32/bits, FlowRemovedMaskBin2:32/bits>>) ->
-    PacketInMask1 = binary_to_flags(packet_in_reason, PacketInMaskBin1),
-    PacketInMask2 = binary_to_flags(packet_in_reason, PacketInMaskBin2),
-    PortStatusMask1 = binary_to_flags(port_reason, PortReasonMaskBin1),
-    PortStatusMask2 = binary_to_flags(port_reason, PortReasonMaskBin2),
-    FlowRemovedMask1 = binary_to_flags(flow_removed_reason,
-                                       FlowRemovedMaskBin1),
-    FlowRemovedMask2 = binary_to_flags(flow_removed_reason,
-                                       FlowRemovedMaskBin2),
-    {{PacketInMask1, PacketInMask2},
-     {PortStatusMask1, PortStatusMask2},
-     {FlowRemovedMask1, FlowRemovedMask2}}.
+decode_async_config_properties(<<>>) ->
+    [];
+decode_async_config_properties(<<TypeInt:16, Length:16, Rest/binary>>) ->
+    Type = ofp_v5_enum:to_atom(async_config_prop_type, TypeInt),
+    RemainingLength = Length - 4,
+    PaddingLength = (Length + 7) div 8 * 8 - Length,
+    <<PropBin:RemainingLength/bytes, _:PaddingLength/bytes, Tail/binary>> = Rest,
+    [decode_async_config_property(Type, PropBin) |
+     decode_async_config_properties(Tail)].
+
+decode_async_config_property(packet_in_slave, <<MaskBin:4/bytes>>) ->
+    Mask = binary_to_flags(packet_in_reason, MaskBin),
+    #ofp_async_config_prop_reasons{type = packet_in_slave, mask = Mask};
+decode_async_config_property(packet_in_master, <<MaskBin:4/bytes>>) ->
+    Mask = binary_to_flags(packet_in_reason, MaskBin),
+    #ofp_async_config_prop_reasons{type = packet_in_master, mask = Mask};
+decode_async_config_property(port_status_slave, <<MaskBin:4/bytes>>) ->
+    Mask = binary_to_flags(port_reason, MaskBin),
+    #ofp_async_config_prop_reasons{type = port_status_slave, mask = Mask};
+decode_async_config_property(port_status_master, <<MaskBin:4/bytes>>) ->
+    Mask = binary_to_flags(port_reason, MaskBin),
+    #ofp_async_config_prop_reasons{type = port_status_master, mask = Mask};
+decode_async_config_property(flow_removed_slave, <<MaskBin:4/bytes>>) ->
+    Mask = binary_to_flags(flow_removed_reason, MaskBin),
+    #ofp_async_config_prop_reasons{type = flow_removed_slave, mask = Mask};
+decode_async_config_property(flow_removed_master, <<MaskBin:4/bytes>>) ->
+    Mask = binary_to_flags(flow_removed_reason, MaskBin),
+    #ofp_async_config_prop_reasons{type = flow_removed_master, mask = Mask};
+decode_async_config_property(role_status_slave, <<MaskBin:4/bytes>>) ->
+    Mask = binary_to_flags(controller_role_reason, MaskBin),
+    #ofp_async_config_prop_reasons{type = role_status_slave, mask = Mask};
+decode_async_config_property(role_status_master, <<MaskBin:4/bytes>>) ->
+    Mask = binary_to_flags(controller_role_reason, MaskBin),
+    #ofp_async_config_prop_reasons{type = role_status_master, mask = Mask};
+decode_async_config_property(table_status_slave, <<MaskBin:4/bytes>>) ->
+    Mask = binary_to_flags(table_reason, MaskBin),
+    #ofp_async_config_prop_reasons{type = table_status_slave, mask = Mask};
+decode_async_config_property(table_status_master, <<MaskBin:4/bytes>>) ->
+    Mask = binary_to_flags(table_reason, MaskBin),
+    #ofp_async_config_prop_reasons{type = table_status_master, mask = Mask};
+decode_async_config_property(requestforward_slave, <<MaskBin:4/bytes>>) ->
+    Mask = binary_to_flags(requestforward_reason, MaskBin),
+    #ofp_async_config_prop_reasons{type = requestforward_slave, mask = Mask};
+decode_async_config_property(requestforward_master, <<MaskBin:4/bytes>>) ->
+    Mask = binary_to_flags(requestforward_reason, MaskBin),
+    #ofp_async_config_prop_reasons{type = requestforward_master, mask = Mask};
+decode_async_config_property(experimenter_slave,
+                             <<Experimenter:32, ExpType:32, Data/bytes>>) ->
+    #ofp_async_config_prop_experimenter{type = experimenter_slave,
+                                        experimenter = Experimenter,
+                                        exp_type = ExpType,
+				        data = Data};
+decode_async_config_property(experimenter_master,
+                             <<Experimenter:32, ExpType:32, Data/bytes>>) ->
+    #ofp_async_config_prop_experimenter{type = experimenter_master,
+                                        experimenter = Experimenter,
+                                        exp_type = ExpType,
+				        data = Data}.
 
 %% @doc Decode meter mod bands
 decode_bands(Binary) ->
@@ -1367,15 +1410,9 @@ decode_body(requestforward, Binary) ->
 decode_body(get_async_request, _) ->
     #ofp_get_async_request{};
 decode_body(get_async_reply, Binary) ->
-    {PacketInMask, PortStatusMask, FlowRemovedMask} = decode_async_masks(Binary),
-    #ofp_get_async_reply{packet_in_mask = PacketInMask,
-                         port_status_mask = PortStatusMask,
-                         flow_removed_mask = FlowRemovedMask};
+    #ofp_get_async_reply{properties = decode_async_config_properties(Binary)};
 decode_body(set_async, Binary) ->
-    {PacketInMask, PortStatusMask, FlowRemovedMask} = decode_async_masks(Binary),
-    #ofp_set_async{packet_in_mask = PacketInMask,
-                   port_status_mask = PortStatusMask,
-                   flow_removed_mask = FlowRemovedMask};
+    #ofp_set_async{properties = decode_async_config_properties(Binary)};
 decode_body(meter_mod, Binary) ->
     <<CommandInt:16, FlagsBin:2/bytes, MeterIdInt:32, BandsBin/bytes>> = Binary,
     Command = get_id(meter_mod_command, CommandInt),

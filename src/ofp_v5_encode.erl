@@ -488,6 +488,46 @@ encode_struct(#ofp_flow_update_abbrev{event = Event,
 encode_struct(#ofp_flow_update_paused{event = Event}) ->
     EventInt = ofp_v5_enum:to_int(flow_update_event, Event),
     <<8:16, EventInt:16, 0:32>>;
+encode_struct(#ofp_async_config_prop_reasons{type = Type, mask = Mask}) ->
+    TypeInt = ofp_v5_enum:to_int(async_config_prop_type, Type),
+    case Type of
+        packet_in_slave ->
+            MaskInt = flags_to_binary(packet_in_reason, Mask, 4);
+        packet_in_master ->
+            MaskInt = flags_to_binary(packet_in_reason, Mask, 4);
+        port_status_slave ->
+            MaskInt = flags_to_binary(port_reason, Mask, 4);
+        port_status_master ->
+            MaskInt = flags_to_binary(port_reason, Mask, 4);
+        flow_removed_slave ->
+            MaskInt = flags_to_binary(flow_removed_reason, Mask, 4);
+        flow_removed_master ->
+            MaskInt = flags_to_binary(flow_removed_reason, Mask, 4);
+        role_status_slave ->
+            MaskInt = flags_to_binary(controller_role_reason, Mask, 4);
+        role_status_master ->
+            MaskInt = flags_to_binary(controller_role_reason, Mask, 4);
+        table_status_slave ->
+            MaskInt = flags_to_binary(table_reason, Mask, 4);
+        table_status_master ->
+            MaskInt = flags_to_binary(table_reason, Mask, 4);
+        requestforward_slave ->
+            MaskInt = flags_to_binary(requestforward_reason, Mask, 4);
+        requestforward_master ->
+            MaskInt = flags_to_binary(requestforward_reason, Mask, 4)
+    end,
+    Length = 8,
+    <<TypeInt:16, Length:16, MaskInt:4/bytes>>;
+encode_struct(#ofp_async_config_prop_experimenter{
+                 type = Type,
+                 experimenter = Experimenter,
+                 exp_type = ExpType,
+                 data = Data}) ->
+    TypeInt = ofp_v5_enum:to_int(async_config_prop_type, Type),
+    Length = 12 + byte_size(Data),
+    Padding = ofp_utils:padding(Length, 8) * 8,
+    <<TypeInt:16, Length:16, Experimenter:32, ExpType:32, Data/bytes,
+      0:Padding>>;
 encode_struct(#ofp_bundle_prop_experimenter{
                  experimenter = Experimenter,
                  exp_type = ExpType,
@@ -497,19 +537,6 @@ encode_struct(#ofp_bundle_prop_experimenter{
                     <<Experimenter:32,
                       ExpType:32,
                       Data/binary>>).
-
-
-encode_async_masks({PacketInMask1, PacketInMask2},
-                   {PortStatusMask1, PortStatusMask2},
-                   {FlowRemovedMask1, FlowRemovedMask2}) ->
-    PIn1 = flags_to_binary(packet_in_reason, PacketInMask1, 4),
-    PIn2 = flags_to_binary(packet_in_reason, PacketInMask2, 4),
-    PS1 = flags_to_binary(port_reason, PortStatusMask1, 4),
-    PS2 = flags_to_binary(port_reason, PortStatusMask2, 4),
-    FR1 = flags_to_binary(flow_removed_reason, FlowRemovedMask1, 4),
-    FR2 = flags_to_binary(flow_removed_reason, FlowRemovedMask2, 4),
-    <<PIn1:32/bits, PIn2:32/bits, PS1:32/bits, PS2:32/bits,
-      FR1:32/bits, FR2:32/bits>>.
 
 encode_bitmap([], Size, Acc) ->
     Bytes = (Size + 1) * 32,
@@ -944,14 +971,10 @@ encode_body(#ofp_requestforward{request = Request}) ->
     do(Request);
 encode_body(#ofp_get_async_request{}) ->
     <<>>;
-encode_body(#ofp_get_async_reply{packet_in_mask = PacketInMask,
-                                 port_status_mask = PortStatusMask,
-                                 flow_removed_mask = FlowRemovedMask}) ->
-    encode_async_masks(PacketInMask, PortStatusMask, FlowRemovedMask);
-encode_body(#ofp_set_async{packet_in_mask = PacketInMask,
-                           port_status_mask = PortStatusMask,
-                           flow_removed_mask = FlowRemovedMask}) ->
-    encode_async_masks(PacketInMask, PortStatusMask, FlowRemovedMask);
+encode_body(#ofp_get_async_reply{properties = Properties}) ->
+    list_to_binary(lists:map(fun encode_struct/1, Properties));
+encode_body(#ofp_set_async{properties = Properties}) ->
+    list_to_binary(lists:map(fun encode_struct/1, Properties));
 encode_body(#ofp_meter_mod{command = Command,
                            flags = Flags,
                            meter_id = MeterId,
