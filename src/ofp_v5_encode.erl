@@ -22,7 +22,9 @@
 %% @private
 -module(ofp_v5_encode).
 
--export([do/1]).
+-export([do/1,
+         encode_struct/1
+  ]).
 
 -include("of_protocol.hrl").
 -include("ofp_v5.hrl").
@@ -476,7 +478,7 @@ encode_struct(#ofp_flow_update_full{
     ReasonInt = ofp_v5_enum:to_int(flow_removed_reason, Reason),
     MatchBin = encode_struct(Match),
     InstrsBin = encode_list(Instructions),
-    Length = 32 + byte_size(MatchBin) + byte_size(InstrsBin),
+    Length = 24 + byte_size(MatchBin) + byte_size(InstrsBin),
     <<Length:16, EventInt:16, TableInt:8, ReasonInt:8, ITO:16, HTO:16, Priority:16, 
       0:32, Cookie:8/bytes, MatchBin/bytes, InstrsBin/bytes>>;
 encode_struct(#ofp_flow_update_abbrev{event = Event,
@@ -933,6 +935,13 @@ encode_body(#ofp_role_status{role = Role,
                   end, Properties),
     PropertiesBin = list_to_binary(EncodedProperties),
     <<RoleInt:32, ReasonInt:8, 0:24, Gen:64, PropertiesBin/binary>>;
+encode_body(#ofp_table_status{reason = Reason,
+                              table = Table}) ->
+    ReasonInt = ofp_v5_enum:to_int(table_reason, Reason),
+    TableBin = encode_struct(Table),
+    <<ReasonInt:8, 0:56, TableBin/binary>>;
+encode_body(#ofp_requestforward{request = Request}) ->
+    do(Request);
 encode_body(#ofp_get_async_request{}) ->
     <<>>;
 encode_body(#ofp_get_async_reply{packet_in_mask = PacketInMask,
@@ -1360,6 +1369,10 @@ type_int(#ofp_role_reply{}) ->
     ofp_v5_enum:to_int(type, role_reply);
 type_int(#ofp_role_status{}) ->
     ofp_v5_enum:to_int(type, role_status);
+type_int(#ofp_table_status{}) ->
+    ofp_v5_enum:to_int(type, table_status);
+type_int(#ofp_requestforward{}) ->
+    ofp_v5_enum:to_int(type, requestforward);
 type_int(#ofp_get_async_request{}) ->
     ofp_v5_enum:to_int(type, get_async_request);
 type_int(#ofp_get_async_reply{}) ->
